@@ -1,0 +1,87 @@
+#! /bin/bash
+source $( dirname -- "$0")/bash-utils.sh
+import_script $( dirname -- "$0"; )/cdemu
+
+controller.switch() {
+  state=$1
+  action=$2
+  shift
+  shift
+  $action $@
+}
+
+controller.process() {
+  event=$1
+  shift
+  echo "processing $event"
+  cdemu.state
+  local state=$( cdemu.state )
+  echo "$state"
+  case $state in
+    "hdd")
+       case $event in
+         "cdrom"|"state") action.$event 
+          ;;
+         "help") action.message "Available commands: cdrom, config, help, state"
+          ;;
+         *) action.error "Incorrect command for the state: $current_state"
+          ;;
+       esac
+       ;;
+    "cdrom")
+       case $event in 
+         insert*) action.insert "$@" 
+         ;;
+         "hdd"|"eject"|"list"|"state") action.$event
+         ;;
+         "help") action.message "Available commands: insert <num>, eject, list, state, help"
+         ;;
+         *) action.error "Incorrect command for the state: $current_state"
+         ;;
+       esac
+    ;;
+  esac
+}
+
+action.hdd() {
+  cdemu.hdd
+}
+
+action.cdrom() {
+  cdemu.cdrom
+}
+
+action.list() {
+  local isolist=$(cdemu.list)
+  nl -w3 -s " >" <<< "$isolist"
+}
+
+action.insert() {
+  isos=( $( cdemu.list ) )
+  filename=${isos[$1-1]} 
+  cdemu.eject
+  cdemu.insert $filename
+}
+
+action.eject() {
+  cdemu.eject
+}
+
+action.error() {
+  echo $1
+}
+
+action.message() {
+  echo $1
+}
+
+input=$1
+output=$2
+echo "" > $2
+echo "CDEMU command line processor" > $2
+echo "" > $2
+echo "The current state is *$(cdemu.state)*" > $2
+echo "Type help to find out more" > $2
+while IFS= read -r event; do 
+  controller.process $event > $2
+done < $1

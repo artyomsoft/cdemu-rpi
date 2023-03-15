@@ -1,0 +1,13 @@
+[Unit]
+Description=Start CD-ROM emulator
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount
+
+[Service]
+ExecStart=/usr/local/bin/cdemu start
+RemainAfterExit=yes
+ExecStop=/usr/local/bin/cdemu stop
+Type=simple
+
+[Install]
+WantedBy=usb-gadget.target

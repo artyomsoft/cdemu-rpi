@@ -1,0 +1,11 @@
+[Unit]
+Description=CDROM Emulation Service
+After=rc-local.target
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=rfcomm -r watch hci0 1 /usr/local/bin/cdemu-cmd /dev/rfcomm0 /dev/rfcomm0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,214 @@
+#! /bin/bash
+
+DATA_DIR="/usr/share/cdemu"
+CONFIG_FILE="/usr/local/etc/cdemu.conf"
+HDD_IMAGE_FILE="/usr/local/share/cdemu/hdd-image.img" 
+
+usb_dev=/sys/kernel/config/usb_gadget/cdemu
+usb_desc=$usb_dev/strings/0x409
+usb_config=$usb_dev/configs/c.1
+usb_config_desc=$usb_config/strings/0x409
+usb_function=$usb_dev/functions
+usb_acm=$usb_function/acm.usb0
+usb_mass_storage=$usb_function/mass_storage.usb0
+usb_config_mass_storage=$usb_config/mass_storage.usb0
+
+config.init() {
+  if [ ! -f $CONFIG_FILE ]; then
+    echo "Config file $CONFIG_FILE doesn't exists. Creating new one"
+    touch $CONFIG_FILE
+    echo "STATE=hdd" >> $CONFIG_FILE
+    echo "FILE_NAME=" >> $CONFIG_FILE
+  fi
+  config.load
+}
+
+config.show() {
+  cat $CONFIG_FILE
+}
+
+config.set() {
+  key=$1
+  value=$2
+  sed -i "s/$key.*/$key=$value/" $CONFIG_FILE
+}
+
+config.load() {
+  . $CONFIG_FILE
+}
+
+config.get() {
+  config.load
+  local var_name=${1}
+  echo ${!var_name}
+}
+
+cdemu.start() {
+  cdemu._init
+  local storage=$(config.get "STATE")
+  local filename=$(config.get "FILE_NAME")
+  if [ "$storage" == "cdrom" ]; then
+    cdemu.remount
+    cdemu._attach_cdrom $filename
+  else
+    cdemu.umount
+    cdemu._attach_hdd
+  fi
+  cdemu.enable
+}
+
+cdemu.start_with_params() {
+  cdemu._init
+  local storage=$1
+  local filename=$2
+  if [ "$storage" == "cdrom" ]; then
+    cdemu.remount
+    cdemu._attach_cdrom $filename
+  else
+    cdemu.umount
+    cdemu._attach_hdd
+  fi
+  cdemu.enable
+}
+
+cdemu.state() {
+  config.get "STATE"
+}
+
+cdemu.list() {
+  local isolist=$(find $DATA_DIR -maxdepth 1 -type f -name '*.iso' -printf '%f\n')
+  echo "$isolist"
+}
+
+cdemu.enable()  {
+  ls /sys/class/udc > $usb_dev/UDC
+}
+
+cdemu.disable() {
+  echo "" > $usb_dev/UDC
+}
+
+cdemu.stop() {
+  rm $usb_config_mass_storage
+  rmdir $usb_mass_storage
+  modprobe -r usb_f_mass_storage
+  rm $usb_dev/configs/c.1/acm.usb0
+  rmdir $usb_dev/configs/c.1/strings/0x409
+  rmdir $usb_dev/configs/c.1
+  rmdir $usb_dev/functions/acm.usb0
+  rmdir $usb_dev/strings/0x409
+  rmdir $usb_dev
+  modprobe -r usb_f_acm
+  modprobe -r libcomposite
+}
+
+cdemu.cdrom() {
+  cdemu.stop
+  cdemu.start_with_params cdrom $(config.get "FILE_NAME")
+  config.set "STATE" "cdrom"
+}
+
+cdemu.hdd() {
+  cdemu.stop
+  cdemu.start_with_params hdd
+  config.set "STATE" "hdd"
+}
+
+cdemu.insert() {
+  if [ $(cat $usb_mass_storage/lun.0/cdrom) != "1" ]; then
+    echo "Not allowed"
+    return 1
+  fi
+  local filename="$DATA_DIR/$1"
+  echo "$filename" > $usb_mass_storage/lun.0/file
+  config.set "FILE_NAME" $1
+}
+
+cdemu.eject() {
+  echo "" > $usb_mass_storage/lun.0/file
+  config.set "FILE_NAME" ""
+}
+
+cdemu.umount() {
+  ! mountpoint -q "$DATA_DIR" || umount "$DATA_DIR"
+}
+
+cdemu.mount() {
+  losetup -D
+  local loop_device=$(losetup -f)
+  losetup -o $(expr 512 \* 2048) $loop_device $HDD_IMAGE_FILE
+  mount -t auto $loop_device "$DATA_DIR"
+}
+
+cdemu.remount() {
+  cdemu.umount
+  cdemu.mount
+}
+
+cdemu._start_getty() {
+   systemctl start serial-getty@ttyGS0
+}
+
+cdemu._init() {
+  config.init
+  modprobe libcomposite
+
+  mkdir -p $usb_dev
+
+  echo 0x0137 > $usb_dev/idProduct
+  echo 0x0100 > $usb_dev/bcdDevice
+  echo 0x0200 > $usb_dev/bcdUSB 
+  echo 0xEF > $usb_dev/bDeviceClass 
+  echo 0x02 > $usb_dev/bDeviceSubClass 
+  echo 0x01 > $usb_dev/bDeviceProtocol 
+
+  mkdir -p $usb_desc 
+  echo "ffcfcfdfd0c6c4f1d1" > $usb_desc/serialnumber
+  echo "Linux Foxundation" > $usb_desc/manufacturer  
+  echo "USB CD-ROM emulator" > $usb_desc/product
+
+  mkdir -p $usb_config_desc
+  echo "acm" > $usb_config_desc/configuration  
+  echo "0x80" > $usb_config/bmAttributes
+  echo 250 > $usb_config/MaxPower
+
+  mkdir -p $usb_acm 
+  ln -s $usb_acm $usb_config
+
+  cdemu._start_getty
+}
+
+cdemu._attach_storage() {
+  local cdrom=$1
+  local filename=$2
+  mkdir -p $usb_mass_storage/lun.0 
+  echo $cdrom > $usb_mass_storage/lun.0/cdrom 
+  echo 1 > $usb_mass_storage/lun.0/removable
+  echo 0 > $usb_mass_storage/lun.0/nofua
+  echo 0 > $usb_mass_storage/stall
+  echo "$filename" > $usb_mass_storage/lun.0/file
+
+  ln -s $usb_mass_storage $usb_config
+}
+
+cdemu._attach_cdrom() {
+  local filename=$1
+  if [ -n "$filename" ]; then
+    local filename=$DATA_DIR/$filename
+  fi
+  cdemu._attach_storage "1" $filename
+}
+
+cdemu._attach_hdd() {
+  cdemu._attach_storage "0" $HDD_IMAGE_FILE
+}
+
+process() {
+  if [ -n "$1" ]; then
+    local action=$1
+    shift
+    cdemu.$action "$@"
+  fi
+}
+
+process "$@"
