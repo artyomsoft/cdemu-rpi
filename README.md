@@ -15,7 +15,7 @@ Hardware emulation of CD-ROM with the help of Rapsberry Pi Zero W 2
 5. Wait until the computer recognizes USB Mass Storage device. 
 6. Copy ISO images you want to emulate to it.
 7. Find Virtual COM Port which is created in Windows after connecting the Rapsberry Pi Zero 2 W.
-8. Use PuTTY to connect to COM Port. 
+8. Use PuTTY to connect to COM Port. Baud Rate: 115200, Data Bits: 8, Parity: None. 
 9. Login in PuTTY to Raspberry Pi OS. User: pi, password: raspberry.
 10. Input the following command:
 ```
