@@ -1,5 +1,5 @@
 # cdemu-rpi
-Hardware emulation of CD-ROM with the help of Rapsberry Pi Zero W 2 
+Hardware emulation of CD-ROM with the help of Rapsberry Pi Zero 2 W 
 
 ## How to use
 1. Build Docker image.
